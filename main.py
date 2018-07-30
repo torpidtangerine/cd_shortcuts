@@ -7,9 +7,15 @@ DEFAULT_CONFIG = """
 {
   "shortcuts": {
     "home": "~"
-  }
+  },
+  "archive": { },
 }
 """.lstrip('\n\r')
+
+class ExitException(Exception):
+  def __init__(self, message, exit_code):
+    super(ExitException, self).__init__(message)
+    self.exit_code = exit_code
 
 def get_default_parser(name):
   parser = argparse.ArgumentParser(description=name,
@@ -27,12 +33,17 @@ def get_config(config_file_path):
   config_file_path = get_config_file_path(config_file_path)
 
   if not os.path.exists(config_file_path):
-    print 'Could not find config at %s' % config_file_path
-    sys.exit(1)
+    raise ExitException('Could not find config at %s' % config_file_path, 1)
 
   json_stream = open(config_file_path, 'r')
   data = load(json_stream)
   json_stream.close()
+
+  if 'archive' not in data:
+    data['archive'] = {}
+  if 'shortcuts' not in data:
+    data['shortcuts'] = {}
+
   return data, config_file_path
 
 def save_config(config_file_path, config):
@@ -60,16 +71,20 @@ def folder(argv):
     print alt_folder
     return
 
-  error_message = '"%s" was not found in shortcut file %s\n\n' % (args.folder, config_file_path)
-  sys.stderr.write(error_message)
   cds_all(['--stream', 'stderr'])
-  sys.exit(1)
+
+  error_message = '\n"%s" was not found in shortcut file %s' % (args.folder, config_file_path)
+  raise ExitException(error_message, 1)
 
 # pylint: disable=unused-argument
 def cds_all(argv):
   parser = get_default_parser('cd_shortcuts.all')
   parser.add_argument('-s', '--stream', default='stderr', help='print to stderr or stdout')
   parser.add_argument('-f', '--format', default='json', help='print as json or spaced')
+  parser.add_argument('-a', '--archive-display',
+    default=False,
+    help='show archive',
+    action='store_true')
   parser.add_argument('-m', '--matching', default=None, help='matching a substring')
   args = parser.parse_args(argv)
 
@@ -82,6 +97,11 @@ def cds_all(argv):
     raise Exception('unknown stream %s' % args.stream)
 
   config, _ = get_config(args.config)
+
+  if not args.archive_display:
+    config = dict(config)
+    del config['archive']
+
   if args.format == 'json':
     dump(config, stream, indent=2)
     stream.write('\n')
@@ -127,10 +147,49 @@ def remove(argv):
   shortcuts = config['shortcuts']
 
   if args.name not in shortcuts:
-    print 'name %s does not exists' % args.name
-    sys.exit(1)
+    raise ExitException('name %s does not exists' % args.name, 1)
 
   del shortcuts[args.name]
+
+  save_config(config_file_path, config)
+
+def archive_nm(argv):
+  parser = get_default_parser('cd_shortcuts.archive')
+  parser.add_argument('-n', '--name', default=None, help='key to archive', required=True)
+  args = parser.parse_args(argv)
+
+  config, config_file_path = get_config(args.config)
+  shortcuts = config['shortcuts']
+  archive = config['archive']
+
+  if args.name not in shortcuts:
+    raise ExitException('name %s does not exist' % args.name, 1)
+
+  if args.name in archive:
+    raise ExitException('name %s already exists in archive' % args.name, 1)
+
+  archive[args.name] = shortcuts[args.name]
+  del shortcuts[args.name]
+
+  save_config(config_file_path, config)
+
+def unarchive_nm(argv):
+  parser = get_default_parser('cd_shortcuts.archive')
+  parser.add_argument('-n', '--name', default=None, help='key to unarchive', required=True)
+  args = parser.parse_args(argv)
+
+  config, config_file_path = get_config(args.config)
+  shortcuts = config['shortcuts']
+  archive = config['archive']
+
+  if args.name in shortcuts:
+    raise ExitException('name %s does already exist' % args.name, 1)
+
+  if args.name not in archive:
+    raise ExitException('name %s not in archive' % args.name, 1)
+
+  shortcuts[args.name] = archive[args.name]
+  del archive[args.name]
 
   save_config(config_file_path, config)
 
@@ -144,12 +203,10 @@ def rename(argv):
   shortcuts = config['shortcuts']
 
   if args.prev not in shortcuts:
-    print 'prev %s does not exists' % args.prev
-    sys.exit(1)
+    raise ExitException('prev %s does not exists' % args.prev, 1)
 
   if args.next in shortcuts:
-    print 'next %s already exists' % args.next
-    sys.exit(1)
+    raise ExitException('next %s already exists' % args.next, 1)
 
   shortcut_to = shortcuts[args.prev]
   del shortcuts[args.prev]
@@ -167,9 +224,20 @@ def add(argv):
   shortcuts = config['shortcuts']
 
   if args.name in shortcuts:
-    print 'name %s already exists' % args.name
-    sys.exit(1)
+    raise ExitException('name %s already exists' % args.name, 1)
 
+  shortcuts[args.name] = args.value
+
+  save_config(config_file_path, config)
+
+def set_folder(argv):
+  parser = get_default_parser('cd_shortcuts.set')
+  parser.add_argument('-n', '--name', default=None, help='key to change', required=True)
+  parser.add_argument('-v', '--value', default=None, help='value to change to', required=True)
+  args = parser.parse_args(argv)
+
+  config, config_file_path = get_config(args.config)
+  shortcuts = config['shortcuts']
   shortcuts[args.name] = args.value
 
   save_config(config_file_path, config)
@@ -195,8 +263,11 @@ ACTION_MAP = {
   'folder': folder,
   'help': print_help,
   'add': add,
+  'set': set_folder,
   'remove': remove,
   'rename': rename,
+  'archive': archive_nm,
+  'unarchive': unarchive_nm,
   'init': cds_init,
 }
 
@@ -211,7 +282,11 @@ def main():
     action = ALIAS_MAP[action]
 
   if action in ACTION_MAP:
-    ACTION_MAP[action](sys.argv[2:])
+    try:
+      ACTION_MAP[action](sys.argv[2:])
+    except ExitException as exit_ex:
+      sys.stderr.write('%s\n' % exit_ex.message)
+      sys.exit(exit_ex.exit_code)
   else:
     print 'Action %s not found' % action
     print 'ACTION_MAP:'
