@@ -272,27 +272,20 @@ ACTION_MAP = {
 }
 
 def main():
-  action = None
-  if len(sys.argv) >= 2:
-    action = sys.argv[1]
-  else:
-    action = 'help'
+  argv = sys.argv[:]
+  if len(argv) < 2:
+    argv = [__file__, 'help']
 
-  if action in ALIAS_MAP:
-    action = ALIAS_MAP[action]
+  action = argv[1]
 
-  if action in ACTION_MAP:
-    try:
-      ACTION_MAP[action](sys.argv[2:])
-    except ExitException as exit_ex:
-      sys.stderr.write('%s\n' % exit_ex.message)
-      sys.exit(exit_ex.exit_code)
-  else:
-    print 'Action %s not found' % action
-    print 'ACTION_MAP:'
-    for key in ACTION_MAP.iterkeys():
-      print key
-    sys.exit(1)
+  action = ALIAS_MAP.get(action, action)
+  action_fn = ACTION_MAP.get(action, print_help)
+
+  try:
+    action_fn(argv[2:])
+  except ExitException as exit_ex:
+    sys.stderr.write('%s\n' % exit_ex.message)
+    sys.exit(exit_ex.exit_code)
 
 if __name__ == '__main__':
   main()
