@@ -8,7 +8,7 @@ DEFAULT_CONFIG = """
   "shortcuts": {
     "home": "~"
   },
-  "archive": { },
+  "archive": {}
 }
 """.lstrip('\n\r')
 
@@ -271,21 +271,28 @@ ACTION_MAP = {
   'init': cds_init,
 }
 
-def main():
-  argv = sys.argv[:]
-  if len(argv) < 2:
-    argv = [__file__, 'help']
+class Main(object):
+  def __init__(self):
+    self.aliases = ALIAS_MAP
+    self.actions = ACTION_MAP
+    self.argv = []
+    self.set_argv(sys.argv)
 
-  action = argv[1]
+  def set_argv(self, argv):
+    if len(argv) >= 2:
+      self.argv = argv
+    else:
+      self.argv = [__file__, 'help']
 
-  action = ALIAS_MAP.get(action, action)
-  action_fn = ACTION_MAP.get(action, print_help)
+  def action(self):
+    action = self.argv[1]
+    action = self.aliases.get(action, action)
+    return self.actions.get(action, print_help)
 
-  try:
-    action_fn(argv[2:])
-  except ExitException as exit_ex:
-    sys.stderr.write('%s\n' % exit_ex.message)
-    sys.exit(exit_ex.exit_code)
-
-if __name__ == '__main__':
-  main()
+  def run(self):
+    action_fn = self.action()
+    try:
+      action_fn(self.argv[2:])
+    except ExitException as exit_ex:
+      sys.stderr.write('%s\n' % exit_ex.message)
+      sys.exit(exit_ex.exit_code)
