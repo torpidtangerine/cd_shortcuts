@@ -1,4 +1,4 @@
-type cds-mod 2>/dev/null
+type cds-mod 1>/dev/null 2>/dev/null
 
 if [ $? -eq 0 ]; then
   return
