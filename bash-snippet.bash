@@ -1,3 +1,9 @@
+type cds-mod 2>/dev/null
+
+if [ $? -eq 0 ]; then
+  return
+fi
+
 cds-mod() {
   python ~/.cd_shortcuts "$@"
 }
