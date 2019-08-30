@@ -42,6 +42,26 @@ def save_config(config_file_path, config):
   json_stream.close()
 
 def folder(argv):
+  folder_found, args, config_file_path = folderif(argv)
+  if folder_found:
+    print folder_found
+    sys.exit(0)
+
+  error_message = '"%s" was not found in shortcut file %s\n\n' % (args.folder, config_file_path)
+  sys.stderr.write(error_message)
+  cds_all(['--stream', 'stderr'])
+  sys.exit(1)
+
+def folder_noerr(argv):
+  folder_found, args, config_file_path = folderif(argv)
+  if folder_found:
+    print folder_found
+    sys.exit(0)
+
+  sys.exit(1)
+
+
+def folderif(argv):
   parser = get_default_parser('cd_shortcuts.folder')
   parser.add_argument('-f', '--folder', default=None, help='folder to print', required=True)
   args = parser.parse_args(argv)
@@ -52,25 +72,21 @@ def folder(argv):
   if args.folder in shortcuts:
     folder_value = shortcuts[args.folder]
     folder_value = os.path.expanduser(folder_value)
-    print folder_value
-    return
+    return folder_value, args, config_file_path
 
   alt_folder = os.path.expanduser(args.folder)
   if os.path.isdir(alt_folder):
     print alt_folder
-    return
+    return alt_folder, args, config_file_path
 
-  error_message = '"%s" was not found in shortcut file %s\n\n' % (args.folder, config_file_path)
-  sys.stderr.write(error_message)
-  cds_all(['--stream', 'stderr'])
-  sys.exit(1)
+  return None, args, config_file_path
 
 # pylint: disable=unused-argument
 def cds_all(argv):
   parser = get_default_parser('cd_shortcuts.all')
   parser.add_argument('-s', '--stream', default='stderr', help='print to stderr or stdout')
   parser.add_argument('-f', '--format', default='json', help='print as json or spaced')
-  parser.add_argument('-m', '--matching', default=None, help='matching a substring')
+  parser.add_argument('-m', '--matching', default='', help='matching a substring')
   args = parser.parse_args(argv)
 
   stream = None
@@ -82,6 +98,7 @@ def cds_all(argv):
     raise Exception('unknown stream %s' % args.stream)
 
   config, _ = get_config(args.config)
+  args.matching = args.matching.strip('\r\t\n ')
   if args.format == 'json':
     dump(config, stream, indent=2)
     stream.write('\n')
@@ -193,6 +210,7 @@ ACTION_MAP = {
   'all': cds_all,
   'print_default': print_default,
   'folder': folder,
+  'folder_noerr': folder_noerr,
   'help': print_help,
   'add': add,
   'remove': remove,
